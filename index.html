@@ -254,6 +254,318 @@
     }
 
     // =====================================================================
+    // BACKGROUND IMAGERY: deep-space scene drawn behind the stars
+    // =====================================================================
+    // Each layer is painted once onto its own hidden canvas at start-up,
+    // then copied every frame (much faster than redrawing all the detail)
+    function makeLayer(width, height) {
+      const layer = document.createElement('canvas');
+      layer.width = width;
+      layer.height = height;
+      return layer;
+    }
+
+    // Fill a soft glowing circle that fades out to nothing at its edge
+    function paintGlow(g, x, y, radius, rgb, alpha) {
+      const glow = g.createRadialGradient(x, y, 0, x, y, radius);
+      glow.addColorStop(0, `rgba(${rgb}, ${alpha})`);
+      glow.addColorStop(0.5, `rgba(${rgb}, ${alpha * 0.4})`);
+      glow.addColorStop(1, `rgba(${rgb}, 0)`);
+      g.fillStyle = glow;
+      g.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+    }
+
+    // --- Sky: dark gradient, Milky Way band and a distant spiral galaxy (never moves)
+    const skyLayer = makeLayer(canvas.width, canvas.height);
+
+    function paintSky() {
+      const g = skyLayer.getContext('2d');
+      const w = canvas.width;
+      const h = canvas.height;
+
+      const sky = g.createLinearGradient(0, 0, 0, h);
+      sky.addColorStop(0, '#03020c');
+      sky.addColorStop(0.6, '#0a0820');
+      sky.addColorStop(1, '#150b28');
+      g.fillStyle = sky;
+      g.fillRect(0, 0, w, h);
+
+      // Milky Way: a soft diagonal band of glow sprinkled with faint dust
+      for (let i = 0; i < 14; i++) {
+        const t = i / 13;
+        paintGlow(g, t * w, h * 0.85 - t * h * 0.7, 110, '150, 130, 255', 0.07);
+      }
+      for (let i = 0; i < 1400; i++) {
+        const t = Math.random();
+        const spread = (Math.random() + Math.random() + Math.random() - 1.5) * 70;
+        g.fillStyle = `rgba(220, 215, 255, ${0.1 + Math.random() * 0.35})`;
+        g.fillRect(t * w + spread * 0.6, h * 0.85 - t * h * 0.7 + spread, 1, 1);
+      }
+
+      // Spiral galaxy: a glowing core with two tilted arms of stars
+      const cx = w * 0.82;
+      const cy = h * 0.2;
+      paintGlow(g, cx, cy, 30, '255, 230, 200', 0.5);
+      for (let arm = 0; arm < 2; arm++) {
+        for (let i = 0; i < 350; i++) {
+          const angle = i * 0.045 + arm * Math.PI;
+          const r = 3 + i * 0.12 + Math.random() * 3;
+          g.fillStyle = `rgba(200, 190, 255, ${0.6 * (1 - i / 350)})`;
+          g.fillRect(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r * 0.45, 1, 1);
+        }
+      }
+    }
+
+    // --- Nebula: coloured gas clouds that drift down very slowly and wrap around
+    const nebulaLayer = makeLayer(canvas.width, canvas.height);
+    const nebulaSpeed = 0.15;
+    let nebulaOffset = 0;
+
+    function paintNebula() {
+      const g = nebulaLayer.getContext('2d');
+      const colors = ['255, 60, 160', '60, 200, 255', '150, 80, 255', '255, 140, 60'];
+      for (let i = 0; i < 10; i++) {
+        const x = Math.random() * canvas.width;
+        const y = Math.random() * canvas.height;
+        const radius = 80 + Math.random() * 120;
+        const rgb = colors[i % colors.length];
+        // Paint copies above and below so the layer tiles seamlessly as it scrolls
+        [-canvas.height, 0, canvas.height].forEach(shift => {
+          paintGlow(g, x, y + shift, radius, rgb, 0.16);
+        });
+      }
+    }
+
+    // --- Planets: pre-painted worlds that drift past at different speeds
+    // Light comes from the top-left; ringed planets get a tilted ring around them
+    function paintPlanet(radius, look) {
+      const ringWidth = look.ring ? radius * 2.3 : radius;
+      const image = makeLayer(Math.ceil(ringWidth * 2 + 8), Math.ceil(radius * 2 + 8));
+      const g = image.getContext('2d');
+      const cx = image.width / 2;
+      const cy = image.height / 2;
+
+      // Back half of the ring (behind the planet)
+      if (look.ring) {
+        g.strokeStyle = look.ring;
+        g.lineWidth = radius * 0.18;
+        g.beginPath();
+        g.ellipse(cx, cy, radius * 2, radius * 0.45, -0.25, Math.PI, Math.PI * 2);
+        g.stroke();
+      }
+
+      // The planet's surface, clipped to a circle
+      g.save();
+      g.beginPath();
+      g.arc(cx, cy, radius, 0, Math.PI * 2);
+      g.clip();
+      g.fillStyle = look.base;
+      g.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
+
+      // Cloud bands (gas giants)
+      if (look.bands) {
+        let y = cy - radius;
+        let band = 0;
+        while (y < cy + radius) {
+          const height = 3 + Math.random() * 6;
+          g.fillStyle = look.bands[band % look.bands.length];
+          g.globalAlpha = 0.6;
+          g.fillRect(cx - radius, y, radius * 2, height);
+          y += height + 2 + Math.random() * 5;
+          band++;
+        }
+        g.globalAlpha = 1;
+      }
+
+      // Craters (moons)
+      if (look.craters) {
+        for (let i = 0; i < 9; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const dist = Math.random() * radius * 0.8;
+          const size = 1 + Math.random() * radius * 0.22;
+          const x = cx + Math.cos(angle) * dist;
+          const y = cy + Math.sin(angle) * dist;
+          g.fillStyle = 'rgba(0, 0, 0, 0.3)';
+          g.beginPath();
+          g.arc(x, y, size, 0, Math.PI * 2);
+          g.fill();
+          g.fillStyle = 'rgba(255, 255, 255, 0.15)';
+          g.beginPath();
+          g.arc(x + size * 0.3, y + size * 0.3, size * 0.6, 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+
+      // Shading: bright where the light hits, dark on the far side
+      const shade = g.createRadialGradient(cx - radius * 0.4, cy - radius * 0.4, radius * 0.1, cx, cy, radius * 1.05);
+      shade.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
+      shade.addColorStop(0.45, 'rgba(0, 0, 0, 0)');
+      shade.addColorStop(1, 'rgba(0, 0, 0, 0.8)');
+      g.fillStyle = shade;
+      g.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
+      g.restore();
+
+      // Thin glowing atmosphere around the edge
+      g.strokeStyle = look.glow;
+      g.lineWidth = 2;
+      g.beginPath();
+      g.arc(cx, cy, radius, 0, Math.PI * 2);
+      g.stroke();
+
+      // Front half of the ring (in front of the planet)
+      if (look.ring) {
+        g.strokeStyle = look.ring;
+        g.lineWidth = radius * 0.18;
+        g.beginPath();
+        g.ellipse(cx, cy, radius * 2, radius * 0.45, -0.25, 0, Math.PI);
+        g.stroke();
+      }
+      return image;
+    }
+
+    const planets = [];
+
+    function createPlanets() {
+      const looks = [
+        // Ringed gas giant
+        { radius: 48, x: 90, y: 140, speed: 0.22,
+          look: { base: '#c9a26b', bands: ['#a67c45', '#e3c48f', '#8a5f32'], ring: 'rgba(230, 210, 170, 0.75)', glow: 'rgba(255, 220, 160, 0.5)' } },
+        // Blue ice giant
+        { radius: 32, x: 360, y: -260, speed: 0.3,
+          look: { base: '#3f7fd9', bands: ['#2d5fae', '#6fb0ff'], glow: 'rgba(120, 190, 255, 0.6)' } },
+        // Small red planet
+        { radius: 20, x: 660, y: 360, speed: 0.36,
+          look: { base: '#b8452e', bands: ['#8e2f1f', '#d8664a'], glow: 'rgba(255, 120, 90, 0.5)' } },
+        // Cratered moon
+        { radius: 12, x: 470, y: 80, speed: 0.42,
+          look: { base: '#9aa0aa', craters: true, glow: 'rgba(200, 210, 255, 0.4)' } },
+      ];
+      looks.forEach(p => {
+        planets.push({ image: paintPlanet(p.radius, p.look), x: p.x, y: p.y, speed: p.speed });
+      });
+    }
+
+    // --- Home planet: a huge night-side world curving along the bottom edge
+    const horizonLayer = makeLayer(canvas.width, canvas.height);
+
+    function paintHorizon() {
+      const g = horizonLayer.getContext('2d');
+      const radius = 960;
+      const cx = canvas.width / 2;
+      const cy = canvas.height + 900; // Only the top of the curve is on screen
+
+      // Atmosphere glow hugging the curve
+      g.strokeStyle = 'rgba(70, 160, 255, 0.12)';
+      g.lineWidth = 30;
+      g.beginPath();
+      g.arc(cx, cy, radius + 8, 0, Math.PI * 2);
+      g.stroke();
+      g.strokeStyle = 'rgba(120, 200, 255, 0.35)';
+      g.lineWidth = 4;
+      g.beginPath();
+      g.arc(cx, cy, radius, 0, Math.PI * 2);
+      g.stroke();
+
+      // Dark surface
+      const surface = g.createLinearGradient(0, cy - radius, 0, canvas.height);
+      surface.addColorStop(0, '#0c2438');
+      surface.addColorStop(1, '#030a12');
+      g.fillStyle = surface;
+      g.beginPath();
+      g.arc(cx, cy, radius, 0, Math.PI * 2);
+      g.fill();
+
+      // Twinkling city lights scattered over the night side
+      for (let i = 0; i < 90; i++) {
+        const angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.9;
+        const depth = 6 + Math.random() * 50;
+        const x = cx + Math.cos(angle) * (radius - depth);
+        const y = cy + Math.sin(angle) * (radius - depth);
+        g.fillStyle = Math.random() < 0.7 ? 'rgba(255, 210, 110, 0.7)' : 'rgba(255, 255, 220, 0.9)';
+        g.fillRect(x, y, Math.random() < 0.2 ? 2 : 1, 1);
+      }
+    }
+
+    // --- Shooting stars: occasional bright streaks across the sky
+    const shootingStars = [];
+    const shootingStarChance = 0.004; // Chance per frame of a new one
+
+    paintSky();
+    paintNebula();
+    createPlanets();
+    paintHorizon();
+
+    // Scroll the nebula and planets, and launch/move shooting stars
+    function moveBackground() {
+      nebulaOffset = (nebulaOffset + nebulaSpeed) % canvas.height;
+
+      planets.forEach(planet => {
+        planet.y += planet.speed;
+        // Once it has drifted off the bottom, send it round again from above
+        if (planet.y > canvas.height) {
+          planet.y = -planet.image.height - Math.random() * 400;
+          planet.x = Math.random() * (canvas.width - planet.image.width);
+        }
+      });
+
+      if (Math.random() < shootingStarChance) {
+        const direction = Math.random() < 0.5 ? -1 : 1;
+        shootingStars.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height * 0.5,
+          dx: direction * (6 + Math.random() * 4),
+          dy: 2 + Math.random() * 2,
+          life: 50,
+          maxLife: 50,
+        });
+      }
+      for (let i = shootingStars.length - 1; i >= 0; i--) {
+        const star = shootingStars[i];
+        star.x += star.dx;
+        star.y += star.dy;
+        star.life--;
+        if (star.life <= 0) {
+          shootingStars.splice(i, 1);
+        }
+      }
+    }
+
+    // Paint the far layers: sky, nebula, planets and shooting stars
+    function drawBackground() {
+      ctx.drawImage(skyLayer, 0, 0);
+
+      // Nebula is drawn twice, one copy above the other, so it wraps seamlessly
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.drawImage(nebulaLayer, 0, nebulaOffset);
+      ctx.drawImage(nebulaLayer, 0, nebulaOffset - canvas.height);
+      ctx.globalCompositeOperation = 'source-over';
+
+      ctx.globalAlpha = 0.85; // Keep planets slightly muted so the action stands out
+      planets.forEach(planet => ctx.drawImage(planet.image, planet.x, planet.y));
+      ctx.globalAlpha = 1;
+
+      ctx.lineWidth = 2;
+      shootingStars.forEach(star => {
+        const fade = star.life / star.maxLife;
+        const tailX = star.x - star.dx * 6;
+        const tailY = star.y - star.dy * 6;
+        const trail = ctx.createLinearGradient(star.x, star.y, tailX, tailY);
+        trail.addColorStop(0, `rgba(255, 255, 255, ${fade})`);
+        trail.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.strokeStyle = trail;
+        ctx.beginPath();
+        ctx.moveTo(star.x, star.y);
+        ctx.lineTo(tailX, tailY);
+        ctx.stroke();
+      });
+    }
+
+    // Paint the home planet in front of the stars (behind the player and shields)
+    function drawHorizon() {
+      ctx.drawImage(horizonLayer, 0, 0);
+    }
+
+    // =====================================================================
     // STARFIELD: scrolling background (3 layers: far stars are small, dim and slow)
     // =====================================================================
     const stars = [];
@@ -270,6 +582,7 @@
           size: layer.size,
           speed: layer.speed,
           color: layer.color,
+          twinkle: Math.random() * Math.PI * 2, // Each star twinkles out of step
         });
       }
     });
@@ -286,12 +599,14 @@
       });
     }
 
-    // Paint every star as a small square
+    // Paint every star as a small square that gently twinkles
     function drawStars() {
       stars.forEach(star => {
+        ctx.globalAlpha = 0.55 + 0.45 * Math.sin(frameCount * 0.06 + star.twinkle);
         ctx.fillStyle = star.color;
         ctx.fillRect(star.x, star.y, star.size, star.size);
       });
+      ctx.globalAlpha = 1;
     }
 
     // =====================================================================
@@ -858,8 +1173,11 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       frameCount++;
 
+      moveBackground();
+      drawBackground();
       moveStars();
       drawStars();
+      drawHorizon();
 
       movePlayer();
       fireBullet();
