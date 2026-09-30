@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>Space Invaders</title>
   <style>
+    /* ===== PAGE LAYOUT: black page with the game canvas centred ===== */
     body {
       margin: 0;
       overflow: hidden;
@@ -14,10 +15,12 @@
       height: 100vh;
       font-family: Arial, sans-serif;
     }
+    /* ===== GAME CANVAS: the play area everything is drawn on ===== */
     canvas {
       background-color: #000;
       border: 1px solid #333;
     }
+    /* ===== HUD: score and lives in the top-left corner ===== */
     #score {
       position: absolute;
       top: 10px;
@@ -25,6 +28,7 @@
       color: white;
       font-size: 20px;
     }
+    /* ===== GAME OVER MESSAGE: hidden until the game ends; click it to restart ===== */
     #game-over {
       position: absolute;
       top: 50%;
@@ -37,11 +41,15 @@
   </style>
 </head>
 <body>
+  <!-- HUD text, the game over message and the canvas the game is drawn on -->
   <div id="score">Score: 0</div>
   <div id="game-over">GAME OVER</div>
   <canvas id="gameCanvas"></canvas>
 
   <script>
+    // =====================================================================
+    // SETUP: grab the canvas, its drawing context and the HUD elements
+    // =====================================================================
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     const scoreElement = document.getElementById('score');
@@ -51,7 +59,10 @@
     canvas.width = 800;
     canvas.height = 600;
 
-    // Pixel-art sprites: each 'X' is one pixel, drawn PIXEL x PIXEL in size
+    // =====================================================================
+    // SPRITES: pixel-art shapes for the player ship and the three invaders
+    // =====================================================================
+    // Each 'X' is one pixel, drawn PIXEL x PIXEL in size
     const PIXEL = 4;
     const SPRITES = {
       player: [
@@ -133,6 +144,7 @@
       ],
     };
 
+    // Draw a sprite at (x, y) by filling a square for every 'X' in its rows
     function drawSprite(sprite, x, y, color) {
       ctx.fillStyle = color;
       sprite.forEach((row, py) => {
@@ -144,7 +156,9 @@
       });
     }
 
-    // Scrolling starfield background (3 layers: far stars are small, dim and slow)
+    // =====================================================================
+    // STARFIELD: scrolling background (3 layers: far stars are small, dim and slow)
+    // =====================================================================
     const stars = [];
     const starLayers = [
       { count: 80, size: 1, speed: 0.3, color: '#555555' },
@@ -163,6 +177,7 @@
       }
     });
 
+    // Scroll every star down the screen at its layer's speed
     function moveStars() {
       stars.forEach(star => {
         star.y += star.speed;
@@ -174,6 +189,7 @@
       });
     }
 
+    // Paint every star as a small square
     function drawStars() {
       stars.forEach(star => {
         ctx.fillStyle = star.color;
@@ -181,11 +197,15 @@
       });
     }
 
-    // Animation frame counter (invaders flip between their two frames)
+    // =====================================================================
+    // ANIMATION: frame counter used to flip invaders between their two frames
+    // =====================================================================
     let frameCount = 0;
     const animationSpeed = 30; // Frames between each flip
 
-    // Player
+    // =====================================================================
+    // PLAYER: the ship's position, size, colour and speed
+    // =====================================================================
     const player = {
       x: canvas.width / 2 - (13 * PIXEL) / 2,
       y: canvas.height - 60,
@@ -196,11 +216,22 @@
       dx: 0,
     };
 
+    // =====================================================================
+    // BULLET SETTINGS: player shots (upwards) and enemy shots (downwards)
+    // =====================================================================
     // Player shooting
     const bullets = [];
     const bulletSpeed = 7;
 
-    // Enemies
+    // Enemy shooting
+    const enemyBullets = [];
+    const enemyBulletSpeed = 4;
+    const enemyFireChance = 0.02; // Chance per frame that the formation fires
+    const maxEnemyBullets = 3;
+
+    // =====================================================================
+    // ENEMIES: invader formation layout, speed and colours
+    // =====================================================================
     const enemies = [];
     const enemyColumns = 4; // 4 columns x 5 rows = 20 invaders
     const columnSpacing = 64;
@@ -213,7 +244,7 @@
 
     const enemyDrop = 20; // How far enemies move down each time they hit an edge
 
-    // Initialize enemies
+    // Build a fresh wave of invaders in a grid at the top of the screen
     function spawnEnemies() {
       enemies.length = 0;
       enemyDirection = 1;
@@ -237,20 +268,253 @@
     }
     spawnEnemies();
 
-    // Score
+    // =====================================================================
+    // SHIELDS: 3 destructible bunkers the ship can hide behind
+    // =====================================================================
+    // Each 'X' is one breakable block, PIXEL x PIXEL in size
+    const SHIELD_SHAPE = [
+      '....XXXXXXXXXXXXXX....',
+      '...XXXXXXXXXXXXXXXX...',
+      '..XXXXXXXXXXXXXXXXXX..',
+      '.XXXXXXXXXXXXXXXXXXXX.',
+      'XXXXXXXXXXXXXXXXXXXXXX',
+      'XXXXXXXXXXXXXXXXXXXXXX',
+      'XXXXXXXXXXXXXXXXXXXXXX',
+      'XXXXXXXXXXXXXXXXXXXXXX',
+      'XXXXXXXXXXXXXXXXXXXXXX',
+      'XXXXXXXXXXXXXXXXXXXXXX',
+      'XXXXXXXXXXXXXXXXXXXXXX',
+      'XXXXXXX........XXXXXXX',
+      'XXXXXX..........XXXXXX',
+      'XXXXX............XXXXX',
+      'XXXXX............XXXXX',
+    ];
+    const shieldCount = 3;
+    const shieldY = canvas.height - 150; // Just above the player's ship
+    const shieldColor = '#00ff00';
+    const shields = [];
+
+    // Build fresh, undamaged shields spread evenly across the screen
+    function spawnShields() {
+      shields.length = 0;
+      const width = SHIELD_SHAPE[0].length * PIXEL;
+      for (let i = 0; i < shieldCount; i++) {
+        const centreX = (canvas.width * (i + 1)) / (shieldCount + 1);
+        shields.push({
+          x: Math.round(centreX - width / 2),
+          y: shieldY,
+          width: width,
+          height: SHIELD_SHAPE.length * PIXEL,
+          // true = block still standing, false = blown away
+          cells: SHIELD_SHAPE.map(row => row.split('').map(c => c === 'X')),
+        });
+      }
+    }
+    spawnShields();
+
+    // Work out which shield blocks a rectangle overlaps (null if none)
+    function shieldCellRange(shield, rect) {
+      if (
+        rect.x >= shield.x + shield.width ||
+        rect.x + rect.width <= shield.x ||
+        rect.y >= shield.y + shield.height ||
+        rect.y + rect.height <= shield.y
+      ) {
+        return null;
+      }
+      return {
+        firstCol: Math.max(0, Math.floor((rect.x - shield.x) / PIXEL)),
+        lastCol: Math.min(shield.cells[0].length - 1, Math.floor((rect.x + rect.width - 1 - shield.x) / PIXEL)),
+        firstRow: Math.max(0, Math.floor((rect.y - shield.y) / PIXEL)),
+        lastRow: Math.min(shield.cells.length - 1, Math.floor((rect.y + rect.height - 1 - shield.y) / PIXEL)),
+      };
+    }
+
+    // Blow a ragged hole in a shield around the block that was hit
+    function damageShield(shield, row, col) {
+      for (let dr = -2; dr <= 2; dr++) {
+        for (let dc = -2; dc <= 2; dc++) {
+          const r = row + dr;
+          const c = col + dc;
+          if (r < 0 || r >= shield.cells.length || c < 0 || c >= shield.cells[0].length) {
+            continue;
+          }
+          // Always clear the centre, randomly clear the edges
+          if (Math.abs(dr) + Math.abs(dc) <= 1 || Math.random() < 0.5) {
+            shield.cells[r][c] = false;
+          }
+        }
+      }
+    }
+
+    // Returns true if a bullet hit a standing block (and damages the shield)
+    function bulletHitsShield(bullet) {
+      for (const shield of shields) {
+        const range = shieldCellRange(shield, bullet);
+        if (!range) {
+          continue;
+        }
+        for (let r = range.firstRow; r <= range.lastRow; r++) {
+          for (let c = range.firstCol; c <= range.lastCol; c++) {
+            if (shield.cells[r][c]) {
+              damageShield(shield, r, c);
+              return true;
+            }
+          }
+        }
+      }
+      return false;
+    }
+
+    // Invaders marching through a shield wipe out the blocks they touch
+    function invaderErodesShields(enemy) {
+      shields.forEach(shield => {
+        const range = shieldCellRange(shield, enemy);
+        if (!range) {
+          return;
+        }
+        for (let r = range.firstRow; r <= range.lastRow; r++) {
+          for (let c = range.firstCol; c <= range.lastCol; c++) {
+            shield.cells[r][c] = false;
+          }
+        }
+      });
+    }
+
+    // =====================================================================
+    // SCORE, LIVES AND HUD
+    // =====================================================================
     let score = 0;
     let gameOver = false;
 
-    // Keyboard keys
+    // Lives
+    const startingLives = 3;
+    let lives = startingLives;
+
+    // Sound on/off (toggled with the M key)
+    let muted = false;
+
+    // Refresh the score/lives text in the top-left corner
+    function updateHud() {
+      scoreElement.innerText = `Score: ${score}   Lives: ${lives}   Sound: ${muted ? 'off' : 'on'} (M)`;
+    }
+    updateHud();
+
+    // =====================================================================
+    // SOUND: arcade-style effects synthesised with the Web Audio API
+    // =====================================================================
+    // Browsers only allow audio after the player presses a key, so the
+    // audio context is created on the first keydown
+    let audioCtx = null;
+    let noiseBuffer = null;
+
+    // The famous 4-note descending bass march
+    const marchNotes = [98, 87, 78, 73];
+    let marchStep = 0;
+    let marchTimer = 0;
+
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        // One second of white noise, reused for every explosion
+        noiseBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate, audioCtx.sampleRate);
+        const data = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < data.length; i++) {
+          data[i] = Math.random() * 2 - 1;
+        }
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    function soundReady() {
+      return audioCtx && !muted;
+    }
+
+    // Play a tone that slides from startFreq to endFreq, then fades out
+    function playTone(type, startFreq, endFreq, duration, volume) {
+      if (!soundReady()) {
+        return;
+      }
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(startFreq, now);
+      osc.frequency.exponentialRampToValueAtTime(endFreq, now + duration);
+      gain.gain.setValueAtTime(volume, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + duration);
+    }
+
+    // Play a burst of filtered noise (explosions)
+    function playNoise(duration, filterFreq, volume) {
+      if (!soundReady()) {
+        return;
+      }
+      const now = audioCtx.currentTime;
+      const source = audioCtx.createBufferSource();
+      const filter = audioCtx.createBiquadFilter();
+      const gain = audioCtx.createGain();
+      source.buffer = noiseBuffer;
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(filterFreq, now);
+      filter.frequency.exponentialRampToValueAtTime(100, now + duration);
+      gain.gain.setValueAtTime(volume, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+      source.connect(filter).connect(gain).connect(audioCtx.destination);
+      source.start(now);
+      source.stop(now + duration);
+    }
+
+    function playShootSound() {
+      playTone('square', 1400, 300, 0.15, 0.08);
+    }
+
+    function playInvaderKilledSound() {
+      playNoise(0.25, 4000, 0.3);
+      playTone('square', 600, 100, 0.2, 0.06);
+    }
+
+    function playPlayerHitSound() {
+      playNoise(0.9, 2000, 0.45);
+    }
+
+    // Step the march: the fewer invaders left, the faster the beat
+    function updateMarch() {
+      marchTimer++;
+      const interval = Math.max(8, Math.round(10 + enemies.length * 2));
+      if (marchTimer >= interval) {
+        marchTimer = 0;
+        playTone('square', marchNotes[marchStep], marchNotes[marchStep] * 0.9, 0.12, 0.2);
+        marchStep = (marchStep + 1) % marchNotes.length;
+      }
+    }
+
+    // =====================================================================
+    // KEYBOARD INPUT: remember which keys are currently held down
+    // =====================================================================
     const keys = {};
     window.addEventListener('keydown', (e) => {
+      initAudio();
+      // M toggles sound on/off
+      if (e.code === 'KeyM' && !e.repeat) {
+        muted = !muted;
+        updateHud();
+      }
       keys[e.code] = true;
     });
     window.addEventListener('keyup', (e) => {
       keys[e.code] = false;
     });
 
-    // Move player
+    // =====================================================================
+    // PLAYER CONTROLS: arrow keys move the ship, Space fires
+    // =====================================================================
+    // Move the ship left/right and keep it on screen
     function movePlayer() {
       if (keys['ArrowLeft']) {
         player.dx = -player.speed;
@@ -265,7 +529,7 @@
       player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
     }
 
-    // Fire bullet
+    // Fire one bullet per Space press from the ship's nose
     function fireBullet() {
       if (keys['Space']) {
         bullets.push({
@@ -275,11 +539,14 @@
           height: 10,
           color: '#ffffff',
         });
+        playShootSound();
         keys['Space'] = false;
       }
     }
 
-    // Move enemies
+    // =====================================================================
+    // ENEMY MOVEMENT: march side to side, drop at edges, respawn when cleared
+    // =====================================================================
     function moveEnemies() {
       // Move the whole formation sideways
       let hitEdge = false;
@@ -300,6 +567,8 @@
       }
 
       enemies.forEach(enemy => {
+        invaderErodesShields(enemy);
+
         // Game over if an enemy reaches the player's row
         if (enemy.y + enemy.height >= player.y) {
           gameOver = true;
@@ -313,12 +582,77 @@
       }
     }
 
-    // Shoot bullets
+    // =====================================================================
+    // BULLET MOVEMENT AND ENEMY FIRE
+    // =====================================================================
+    // Move player bullets up and remove any that leave the screen
     function shootBullets() {
       for (let i = bullets.length - 1; i >= 0; i--) {
         bullets[i].y -= bulletSpeed;
-        if (bullets[i].y < 0) {
+        if (bullets[i].y < 0 || bulletHitsShield(bullets[i])) {
           bullets.splice(i, 1);
+        }
+      }
+    }
+
+    // Enemies fire back: a random column's lowest invader drops a bullet
+    function enemyFire() {
+      if (enemies.length === 0 || enemyBullets.length >= maxEnemyBullets) {
+        return;
+      }
+      if (Math.random() > enemyFireChance) {
+        return;
+      }
+
+      const shooter = enemies[Math.floor(Math.random() * enemies.length)];
+      // Only the lowest invader in that column can shoot
+      const lowest = enemies.reduce((low, enemy) => {
+        const sameColumn = Math.abs(enemy.x + enemy.width / 2 - (shooter.x + shooter.width / 2)) < columnSpacing / 2;
+        return sameColumn && enemy.y > low.y ? enemy : low;
+      }, shooter);
+
+      enemyBullets.push({
+        x: lowest.x + lowest.width / 2 - 2,
+        y: lowest.y + lowest.height,
+        width: 4,
+        height: 10,
+      });
+    }
+
+    // Move enemy bullets down and remove any that leave the screen
+    function moveEnemyBullets() {
+      for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        enemyBullets[i].y += enemyBulletSpeed;
+        if (enemyBullets[i].y > canvas.height || bulletHitsShield(enemyBullets[i])) {
+          enemyBullets.splice(i, 1);
+        }
+      }
+    }
+
+    // =====================================================================
+    // COLLISIONS: bullets vs. player, bullets vs. invaders, invaders vs. player
+    // =====================================================================
+    // Check if an enemy bullet hits the player (lose a life)
+    function checkPlayerHit() {
+      for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        const bullet = enemyBullets[i];
+        if (
+          bullet.x < player.x + player.width &&
+          bullet.x + bullet.width > player.x &&
+          bullet.y < player.y + player.height &&
+          bullet.y + bullet.height > player.y
+        ) {
+          lives--;
+          updateHud();
+          playPlayerHitSound();
+          // Clear incoming fire and recentre the ship
+          enemyBullets.length = 0;
+          player.x = canvas.width / 2 - player.width / 2;
+          if (lives <= 0) {
+            gameOver = true;
+            gameOverElement.style.display = 'block';
+          }
+          return;
         }
       }
     }
@@ -348,16 +682,20 @@
           ) {
             // Hit enemy
             score += 10;
-            scoreElement.innerText = `Score: ${score}`;
+            updateHud();
+            playInvaderKilledSound();
             enemies.splice(i, 1);
             bullets.splice(j, 1);
+            i--; // The next enemy shifted into this slot; don't skip it
             break;
           }
         }
       }
     }
 
-    // Draw functions
+    // =====================================================================
+    // DRAWING: paint the player, bullets and invaders onto the canvas
+    // =====================================================================
     function drawPlayer() {
       drawSprite(SPRITES.player, player.x, player.y, player.color);
     }
@@ -369,6 +707,26 @@
       });
     }
 
+    function drawShields() {
+      ctx.fillStyle = shieldColor;
+      shields.forEach(shield => {
+        shield.cells.forEach((row, r) => {
+          row.forEach((standing, c) => {
+            if (standing) {
+              ctx.fillRect(shield.x + c * PIXEL, shield.y + r * PIXEL, PIXEL, PIXEL);
+            }
+          });
+        });
+      });
+    }
+
+    function drawEnemyBullets() {
+      ctx.fillStyle = '#ff4444';
+      enemyBullets.forEach(bullet => {
+        ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+      });
+    }
+
     function drawEnemies() {
       const frame = Math.floor(frameCount / animationSpeed) % 2;
       enemies.forEach(enemy => {
@@ -376,6 +734,7 @@
       });
     }
 
+    // Not currently used: the score and game over text are HTML elements instead
     function drawScore() {
       ctx.fillStyle = 'white';
       ctx.font = '20px Arial';
@@ -388,7 +747,9 @@
       ctx.fillText('GAME OVER', canvas.width / 2 - 100, canvas.height / 2);
     }
 
-    // Game loop
+    // =====================================================================
+    // GAME LOOP: runs every frame - update everything, then draw it
+    // =====================================================================
     function gameLoop() {
       if (gameOver) {
         return;
@@ -403,11 +764,17 @@
       movePlayer();
       fireBullet();
       moveEnemies();
+      updateMarch();
       shootBullets();
+      enemyFire();
+      moveEnemyBullets();
       checkCollision();
+      checkPlayerHit();
 
+      drawShields();
       drawPlayer();
       drawBullets();
+      drawEnemyBullets();
       drawEnemies();
 
       requestAnimationFrame(gameLoop);
@@ -416,16 +783,21 @@
     // Start game
     gameLoop();
 
-    // Handle restart
+    // =====================================================================
+    // RESTART: clicking GAME OVER resets score, lives, bullets and invaders
+    // =====================================================================
     gameOverElement.addEventListener('click', () => {
       gameOver = false;
       score = 0;
+      lives = startingLives;
       player.x = canvas.width / 2 - player.width / 2;
       player.dx = 0;
       bullets.length = 0;
+      enemyBullets.length = 0;
       spawnEnemies();
+      spawnShields();
       gameOverElement.style.display = 'none';
-      scoreElement.innerText = `Score: ${score}`;
+      updateHud();
       gameLoop();
     });
   </script>
