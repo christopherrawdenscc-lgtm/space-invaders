@@ -60,100 +60,197 @@
     canvas.height = 600;
 
     // =====================================================================
-    // SPRITES: pixel-art shapes for the player ship and the three invaders
+    // SPRITES: detailed, multi-coloured pixel art for the ship and invaders
     // =====================================================================
-    // Each 'X' is one pixel, drawn PIXEL x PIXEL in size
+    // Each character is one pixel, SPRITE_PIXEL x SPRITE_PIXEL in size.
+    // '.' is transparent; every other letter is looked up in the sprite's palette:
+    //   L = light edge, B = body, D = shadow, T = legs/tentacles, E = eyes, W = eye sparkle
+    const SPRITE_PIXEL = 2;
+    // Shields are built from chunkier PIXEL x PIXEL blocks
     const PIXEL = 4;
-    const SPRITES = {
+
+    const PALETTES = {
+      player: {
+        W: '#ffffff', // Nose tip and canopy glint
+        C: '#66e0ff', // Cockpit glass
+        S: '#b8c4d0', // Silver cannons and nose cone
+        L: '#9dff9d', // Light edges of the hull
+        G: '#22cc44', // Hull
+        g: '#127a2a', // Hull shadow
+        Y: '#ffd23f', // Running lights
+        R: '#ff4a2e', // Cannon tips and engine flames
+      },
+      squid:   { L: '#ffc2ff', B: '#ff4fd8', D: '#a3219a', T: '#c27dff', E: '#fff36b', W: '#ffffff' },
+      crab:    { L: '#bdf0ff', B: '#33b5ff', D: '#1a6fb0', T: '#4ce0c0', E: '#ff4d6d', W: '#ffffff' },
+      octopus: { L: '#e0ffb8', B: '#7ddc3a', D: '#3f8a1c', T: '#ffc53d', E: '#ff3b5c', W: '#ffffff' },
+    };
+
+    const SPRITE_ART = {
       player: [
-        '......X......',
-        '.....XXX.....',
-        '.....XXX.....',
-        '.XXXXXXXXXXX.',
-        'XXXXXXXXXXXXX',
-        'XXXXXXXXXXXXX',
-        'XXXXXXXXXXXXX',
-        'XXXXXXXXXXXXX',
+        '............WW............',
+        '...........WCCW...........',
+        '...........SCCS...........',
+        '..........SSCCSS..........',
+        '..........SSSSSS..........',
+        '.........LGGSSGGL.........',
+        '....R...LGGGGGGGGL...R....',
+        '...SRS.LGGGGGGGGGGL.SRS...',
+        '...SSSLGGGGWWWWGGGGLSSS...',
+        '..LGGGGGGGGGGGGGGGGGGGGL..',
+        '.LGGGGGGGGGGGGGGGGGGGGGGL.',
+        'gGGGGGGYYGGGGGGGGYYGGGGGGg',
+        'gGGGGGGGGGGGGGGGGGGGGGGGGg',
+        'gggggggggggggggggggggggggg',
+        '...RYR..............RYR...',
+        '....R................R....',
       ],
       // Each invader has two animation frames
       squid: [
         [
-          '...XX...',
-          '..XXXX..',
-          '.XXXXXX.',
-          'XX.XX.XX',
-          'XXXXXXXX',
-          '..X..X..',
-          '.X.XX.X.',
-          'X.X..X.X',
+          '......LLLL......',
+          '......BBBB......',
+          '....LLBBBBLL....',
+          '....BBBBBBBB....',
+          '..LLBBBBBBBBLL..',
+          '..BBBBBBBBBBBB..',
+          'LLBBWEBBBBWEBBLL',
+          'BBBBEEBBBBEEBBBB',
+          'BBBBBBBBBBBBBBBB',
+          'DDDDDDDDDDDDDDDD',
+          '....TT....TT....',
+          '....TT....TT....',
+          '..TT..TTTT..TT..',
+          '..TT..TTTT..TT..',
+          'TT..TT....TT..TT',
+          'TT..TT....TT..TT',
         ],
         [
-          '...XX...',
-          '..XXXX..',
-          '.XXXXXX.',
-          'XX.XX.XX',
-          'XXXXXXXX',
-          '.X.XX.X.',
-          'X......X',
-          '.X....X.',
+          '......LLLL......',
+          '......BBBB......',
+          '....LLBBBBLL....',
+          '....BBBBBBBB....',
+          '..LLBBBBBBBBLL..',
+          '..BBBBBBBBBBBB..',
+          'LLBBWEBBBBWEBBLL',
+          'BBBBEEBBBBEEBBBB',
+          'BBBBBBBBBBBBBBBB',
+          'DDDDDDDDDDDDDDDD',
+          '..TT..TTTT..TT..',
+          '..TT..TTTT..TT..',
+          'TT............TT',
+          'TT............TT',
+          '..TT........TT..',
+          '..TT........TT..',
         ],
       ],
       crab: [
         [
-          '..X.....X..',
-          '...X...X...',
-          '..XXXXXXX..',
-          '.XX.XXX.XX.',
-          'XXXXXXXXXXX',
-          'X.XXXXXXX.X',
-          'X.X.....X.X',
-          '...XX.XX...',
+          '....EE..........EE....',
+          '....EE..........EE....',
+          '......LL......LL......',
+          '......BB......BB......',
+          '....LLBBLLLLLLBBLL....',
+          '....BBBBBBBBBBBBBB....',
+          '..LLBBWEBBBBBBWEBBLL..',
+          '..BBBBEEBBBBBBEEBBBB..',
+          'LLBBBBBBBBBBBBBBBBBBLL',
+          'BBDDBBBBBBBBBBBBBBDDBB',
+          'BB..BBBBBBBBBBBBBB..BB',
+          'DD..DDDDDDDDDDDDDD..DD',
+          'TT..TT..........TT..TT',
+          'TT..TT..........TT..TT',
+          '......TTTT..TTTT......',
+          '......TTTT..TTTT......',
         ],
         [
-          '..X.....X..',
-          'X..X...X..X',
-          'X.XXXXXXX.X',
-          'XXX.XXX.XXX',
-          'XXXXXXXXXXX',
-          '.XXXXXXXXX.',
-          '..X.....X..',
-          '.X.......X.',
+          '....EE..........EE....',
+          '....EE..........EE....',
+          'LL....LL......LL....LL',
+          'BB....BB......BB....BB',
+          'BB..LLBBLLLLLLBBLL..BB',
+          'BB..BBBBBBBBBBBBBB..BB',
+          'BBLLBBWEBBBBBBWEBBLLBB',
+          'BBBBBBEEBBBBBBEEBBBBBB',
+          'BBBBBBBBBBBBBBBBBBBBBB',
+          'DDBBBBBBBBBBBBBBBBBBDD',
+          '..BBBBBBBBBBBBBBBBBB..',
+          '..DDDDDDDDDDDDDDDDDD..',
+          '....TT..........TT....',
+          '....TT..........TT....',
+          '..TT..............TT..',
+          '..TT..............TT..',
         ],
       ],
       octopus: [
         [
-          '....XXXX....',
-          '.XXXXXXXXXX.',
-          'XXXXXXXXXXXX',
-          'XXX..XX..XXX',
-          'XXXXXXXXXXXX',
-          '...XX..XX...',
-          '..XX.XX.XX..',
-          'XX........XX',
+          '........LLLLLLLL........',
+          '........BBBBBBBB........',
+          '..LLLLLLBBBBBBBBLLLLLL..',
+          '..BBBBBBBBBBBBBBBBBBBB..',
+          'LLBBBBBBBBBBBBBBBBBBBBLL',
+          'BBBBBBBBBBBBBBBBBBBBBBBB',
+          'BBBBBBWEEEBBBBWEEEBBBBBB',
+          'BBBBBBEEEEBBBBEEEEBBBBBB',
+          'BBBBBBBBBBBBBBBBBBBBBBBB',
+          'DDDDDDDDDDDDDDDDDDDDDDDD',
+          '......TTTT....TTTT......',
+          '......TTTT....TTTT......',
+          '....TTTT..TTTT..TTTT....',
+          '....TTTT..TTTT..TTTT....',
+          'TTTT................TTTT',
+          'TTTT................TTTT',
         ],
         [
-          '....XXXX....',
-          '.XXXXXXXXXX.',
-          'XXXXXXXXXXXX',
-          'XXX..XX..XXX',
-          'XXXXXXXXXXXX',
-          '..XXX..XXX..',
-          '.XX..XX..XX.',
-          '..XX....XX..',
+          '........LLLLLLLL........',
+          '........BBBBBBBB........',
+          '..LLLLLLBBBBBBBBLLLLLL..',
+          '..BBBBBBBBBBBBBBBBBBBB..',
+          'LLBBBBBBBBBBBBBBBBBBBBLL',
+          'BBBBBBBBBBBBBBBBBBBBBBBB',
+          'BBBBBBWEEEBBBBWEEEBBBBBB',
+          'BBBBBBEEEEBBBBEEEEBBBBBB',
+          'BBBBBBBBBBBBBBBBBBBBBBBB',
+          'DDDDDDDDDDDDDDDDDDDDDDDD',
+          '....TTTTTT....TTTTTT....',
+          '....TTTTTT....TTTTTT....',
+          '..TTTT....TTTT....TTTT..',
+          '..TTTT....TTTT....TTTT..',
+          '....TTTT........TTTT....',
+          '....TTTT........TTTT....',
         ],
       ],
     };
 
-    // Draw a sprite at (x, y) by filling a square for every 'X' in its rows
-    function drawSprite(sprite, x, y, color) {
-      ctx.fillStyle = color;
-      sprite.forEach((row, py) => {
+    // Paint a sprite's rows onto its own small canvas once, so each frame
+    // only has to copy the finished picture instead of redrawing every pixel
+    function renderSprite(rows, palette) {
+      const image = document.createElement('canvas');
+      image.width = rows[0].length * SPRITE_PIXEL;
+      image.height = rows.length * SPRITE_PIXEL;
+      const imageCtx = image.getContext('2d');
+      rows.forEach((row, py) => {
         for (let px = 0; px < row.length; px++) {
-          if (row[px] === 'X') {
-            ctx.fillRect(x + px * PIXEL, y + py * PIXEL, PIXEL, PIXEL);
+          const color = palette[row[px]];
+          if (color) {
+            imageCtx.fillStyle = color;
+            imageCtx.fillRect(px * SPRITE_PIXEL, py * SPRITE_PIXEL, SPRITE_PIXEL, SPRITE_PIXEL);
           }
         }
       });
+      return image;
+    }
+
+    // Pre-rendered sprites: SPRITES.player, and two frames for each invader type
+    const SPRITES = {
+      player: renderSprite(SPRITE_ART.player, PALETTES.player),
+    };
+    ['squid', 'crab', 'octopus'].forEach(type => {
+      SPRITES[type] = SPRITE_ART[type].map(frame => renderSprite(frame, PALETTES[type]));
+    });
+
+    // Draw a pre-rendered sprite with its top-left corner at (x, y)
+    function drawSprite(sprite, x, y) {
+      ctx.drawImage(sprite, x, y);
     }
 
     // =====================================================================
@@ -204,14 +301,13 @@
     const animationSpeed = 30; // Frames between each flip
 
     // =====================================================================
-    // PLAYER: the ship's position, size, colour and speed
+    // PLAYER: the ship's position, size and speed (size comes from its sprite)
     // =====================================================================
     const player = {
-      x: canvas.width / 2 - (13 * PIXEL) / 2,
+      x: canvas.width / 2 - SPRITES.player.width / 2,
       y: canvas.height - 60,
-      width: 13 * PIXEL,
-      height: 8 * PIXEL,
-      color: '#00ff00',
+      width: SPRITES.player.width,
+      height: SPRITES.player.height,
       speed: 5,
       dx: 0,
     };
@@ -230,7 +326,7 @@
     const maxEnemyBullets = 3;
 
     // =====================================================================
-    // ENEMIES: invader formation layout, speed and colours
+    // ENEMIES: invader formation layout and speed (colours live in PALETTES)
     // =====================================================================
     const enemies = [];
     const enemyColumns = 4; // 4 columns x 5 rows = 20 invaders
@@ -240,7 +336,6 @@
     let enemyDirection = 1; // Whole formation moves together: 1 = right, -1 = left
     // Invader type for each row, top to bottom (like the arcade game)
     const rowTypes = ['squid', 'crab', 'crab', 'octopus', 'octopus'];
-    const typeColors = { squid: '#ff66ff', crab: '#66ccff', octopus: '#ffffff' };
 
     const enemyDrop = 20; // How far enemies move down each time they hit an edge
 
@@ -248,10 +343,10 @@
     function spawnEnemies() {
       enemies.length = 0;
       enemyDirection = 1;
-      const widestInvader = 12 * PIXEL; // Octopus is the widest sprite
+      const widestInvader = SPRITES.octopus[0].width; // Octopus is the widest sprite
       for (let row = 0; row < rowTypes.length; row++) {
         const type = rowTypes[row];
-        const width = SPRITES[type][0][0].length * PIXEL;
+        const width = SPRITES[type][0].width;
         for (let col = 0; col < enemyColumns; col++) {
           enemies.push({
             type: type,
@@ -259,8 +354,7 @@
             x: 50 + col * columnSpacing + (widestInvader - width) / 2,
             y: 50 + row * rowSpacing,
             width: width,
-            height: 8 * PIXEL,
-            color: typeColors[type],
+            height: SPRITES[type][0].height,
             row: row,
           });
         }
@@ -291,7 +385,8 @@
     ];
     const shieldCount = 3;
     const shieldY = canvas.height - 150; // Just above the player's ship
-    const shieldColor = '#00ff00';
+    const shieldColor = '#1fbf3f';
+    const shieldEdgeColor = '#8dff8d'; // Lit top edge of each block
     const shields = [];
 
     // Build fresh, undamaged shields spread evenly across the screen
@@ -537,7 +632,6 @@
           y: player.y,
           width: 4,
           height: 10,
-          color: '#ffffff',
         });
         playShootSound();
         keys['Space'] = false;
@@ -697,22 +791,30 @@
     // DRAWING: paint the player, bullets and invaders onto the canvas
     // =====================================================================
     function drawPlayer() {
-      drawSprite(SPRITES.player, player.x, player.y, player.color);
+      drawSprite(SPRITES.player, player.x, player.y);
     }
 
+    // Draw a bullet as a coloured glow with a bright core down the middle
+    function drawGlowingBullet(bullet, glowColor, coreColor) {
+      ctx.fillStyle = glowColor;
+      ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+      ctx.fillStyle = coreColor;
+      ctx.fillRect(bullet.x + 1, bullet.y + 1, bullet.width - 2, bullet.height - 2);
+    }
+
+    // Player shots: cyan laser with a white core
     function drawBullets() {
-      ctx.fillStyle = '#ffffff';
-      bullets.forEach(bullet => {
-        ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
-      });
+      bullets.forEach(bullet => drawGlowingBullet(bullet, '#33ccff', '#ffffff'));
     }
 
+    // Shield blocks with a lit top edge wherever the block above is gone
     function drawShields() {
-      ctx.fillStyle = shieldColor;
       shields.forEach(shield => {
         shield.cells.forEach((row, r) => {
           row.forEach((standing, c) => {
             if (standing) {
+              const topEdge = r === 0 || !shield.cells[r - 1][c];
+              ctx.fillStyle = topEdge ? shieldEdgeColor : shieldColor;
               ctx.fillRect(shield.x + c * PIXEL, shield.y + r * PIXEL, PIXEL, PIXEL);
             }
           });
@@ -720,17 +822,15 @@
       });
     }
 
+    // Enemy shots: red with a hot yellow core
     function drawEnemyBullets() {
-      ctx.fillStyle = '#ff4444';
-      enemyBullets.forEach(bullet => {
-        ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
-      });
+      enemyBullets.forEach(bullet => drawGlowingBullet(bullet, '#ff3344', '#ffdd55'));
     }
 
     function drawEnemies() {
       const frame = Math.floor(frameCount / animationSpeed) % 2;
       enemies.forEach(enemy => {
-        drawSprite(SPRITES[enemy.type][frame], enemy.x, enemy.y, enemy.color);
+        drawSprite(SPRITES[enemy.type][frame], enemy.x, enemy.y);
       });
     }
 
