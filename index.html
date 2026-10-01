@@ -83,6 +83,8 @@
       squid:   { L: '#ffc2ff', B: '#ff4fd8', D: '#a3219a', T: '#c27dff', E: '#fff36b', W: '#ffffff' },
       crab:    { L: '#bdf0ff', B: '#33b5ff', D: '#1a6fb0', T: '#4ce0c0', E: '#ff4d6d', W: '#ffffff' },
       octopus: { L: '#e0ffb8', B: '#7ddc3a', D: '#3f8a1c', T: '#ffc53d', E: '#ff3b5c', W: '#ffffff' },
+      // UFO: L/C = glass dome, S = silver rim, R/D = red hull and shadow, Y = lights, O = thrusters
+      ufo:     { L: '#e6fbff', C: '#7fe3ff', W: '#ffffff', S: '#c9d3de', R: '#e8303f', D: '#8c1a2a', Y: '#ffe95c', O: '#ff9a3c' },
     };
 
     const SPRITE_ART = {
@@ -90,11 +92,11 @@
         '............WW............',
         '...........WCCW...........',
         '...........SCCS...........',
-        '..........SSCCSS..........',
-        '..........SSSSSS..........',
-        '.........LGGSSGGL.........',
-        '....R...LGGGGGGGGL...R....',
-        '...SRS.LGGGGGGGGGGL.SRS...',
+        '....R.....SSCCSS.....R....',
+        '....S.....SSSSSS.....S....',
+        '....S....LGGSSGGL....S....',
+        '...SSS..LGGGGGGGGL..SSS...',
+        '...SSS.LGGGGGGGGGGL.SSS...',
         '...SSSLGGGGWWWWGGGGLSSS...',
         '..LGGGGGGGGGGGGGGGGGGGGL..',
         '.LGGGGGGGGGGGGGGGGGGGGGGL.',
@@ -219,6 +221,23 @@
           '....TTTT........TTTT....',
         ],
       ],
+      // Mystery UFO (one picture; its lights blink by swapping palettes)
+      ufo: [
+        '............LCCCCCCL............',
+        '..........LCCWCCCCWCCL..........',
+        '.........LCCCCCCCCCCCCL.........',
+        '........SSSSSSSSSSSSSSSS........',
+        '.....SSSRRRRRRRRRRRRRRRRSSS.....',
+        '...SRRRRRRRRRRRRRRRRRRRRRRRRS...',
+        '.SRRYYRRRYYRRRYYYYRRRYYRRRYYRRS.',
+        'SRRRYYRRRYYRRRYYYYRRRYYRRRYYRRRS',
+        'SRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRS',
+        '.DDDDDDDDDDDDDDDDDDDDDDDDDDDDDD.',
+        '...DDDDDDDDDDDDDDDDDDDDDDDDDD...',
+        '.....DD....DD......DD....DD.....',
+        '.....OO....OO......OO....OO.....',
+        '......O.....O......O.....O......',
+      ],
     };
 
     // Paint a sprite's rows onto its own small canvas once, so each frame
@@ -247,6 +266,11 @@
     ['squid', 'crab', 'octopus'].forEach(type => {
       SPRITES[type] = SPRITE_ART[type].map(frame => renderSprite(frame, PALETTES[type]));
     });
+    // UFO: lights on, then lights dimmed with brighter thrusters, so it blinks
+    SPRITES.ufo = [
+      renderSprite(SPRITE_ART.ufo, PALETTES.ufo),
+      renderSprite(SPRITE_ART.ufo, { ...PALETTES.ufo, Y: '#6b4a12', O: '#ffd23f' }),
+    ];
 
     // Draw a pre-rendered sprite with its top-left corner at (x, y)
     function drawSprite(sprite, x, y) {
@@ -792,6 +816,121 @@
     }
 
     // =====================================================================
+    // UFO: mystery ship that crosses the top of the screen for a big bonus
+    // =====================================================================
+    const ufoY = 14;
+    const ufoSpeed = 2.5;
+    const ufoPrizes = [100, 150, 200, 300, 500]; // Mystery score (an invader is only 10)
+    const ufoMinDelay = 900;  // Frames between visits (60 frames is about 1 second)
+    const ufoMaxDelay = 1800;
+    let ufo = null;           // null whenever no UFO is on screen
+    let ufoTimer = 0;         // Frames until the next UFO appears
+    const scorePopups = [];   // Floating "+300" messages where a UFO was shot
+
+    function randomUfoDelay() {
+      return ufoMinDelay + Math.floor(Math.random() * (ufoMaxDelay - ufoMinDelay));
+    }
+
+    // Clear any UFO and start the countdown to the next one
+    function resetUfo() {
+      ufo = null;
+      ufoTimer = randomUfoDelay();
+      scorePopups.length = 0;
+    }
+    resetUfo();
+
+    // Count down to the next UFO, fly the current one across, and age the popups
+    function moveUfo() {
+      if (!ufo) {
+        ufoTimer--;
+        if (ufoTimer <= 0) {
+          // Enter from a random side, just off screen
+          const direction = Math.random() < 0.5 ? 1 : -1;
+          const width = SPRITES.ufo[0].width;
+          ufo = {
+            x: direction === 1 ? -width : canvas.width,
+            y: ufoY,
+            width: width,
+            height: SPRITES.ufo[0].height,
+            dx: direction * ufoSpeed,
+          };
+        }
+      } else {
+        ufo.x += ufo.dx;
+        // Escaped off the far side
+        if (ufo.x > canvas.width || ufo.x + ufo.width < 0) {
+          ufo = null;
+          ufoTimer = randomUfoDelay();
+        }
+      }
+      updateUfoSiren();
+
+      for (let i = scorePopups.length - 1; i >= 0; i--) {
+        scorePopups[i].life--;
+        scorePopups[i].y += 0.3;
+        if (scorePopups[i].life <= 0) {
+          scorePopups.splice(i, 1);
+        }
+      }
+    }
+
+    // Shoot the UFO down for a random mystery prize
+    function checkUfoHit() {
+      if (!ufo) {
+        return;
+      }
+      for (let j = 0; j < bullets.length; j++) {
+        const bullet = bullets[j];
+        if (
+          bullet.x < ufo.x + ufo.width &&
+          bullet.x + bullet.width > ufo.x &&
+          bullet.y < ufo.y + ufo.height &&
+          bullet.y + bullet.height > ufo.y
+        ) {
+          bullets.splice(j, 1);
+          shootDownUfo();
+          return;
+        }
+      }
+    }
+
+    // Award the mystery prize, show the popup and remove the UFO
+    function shootDownUfo() {
+      const prize = ufoPrizes[Math.floor(Math.random() * ufoPrizes.length)];
+      score += prize;
+      updateHud();
+      scorePopups.push({
+        // Keep the text on screen even if the UFO was near an edge
+        x: Math.max(40, Math.min(canvas.width - 40, ufo.x + ufo.width / 2)),
+        y: ufo.y + ufo.height,
+        text: `+${prize}`,
+        life: 120,
+        maxLife: 120,
+      });
+      ufo = null;
+      ufoTimer = randomUfoDelay();
+      updateUfoSiren();
+      playUfoHitSound();
+    }
+
+    // Draw the UFO with blinking lights, plus any flashing prize popups
+    function drawUfo() {
+      if (ufo) {
+        const frame = Math.floor(frameCount / 8) % 2;
+        drawSprite(SPRITES.ufo[frame], ufo.x, ufo.y);
+      }
+      ctx.font = 'bold 24px Arial';
+      ctx.textAlign = 'center';
+      scorePopups.forEach(popup => {
+        ctx.globalAlpha = popup.life / popup.maxLife;
+        ctx.fillStyle = Math.floor(popup.life / 6) % 2 ? '#ffe95c' : '#ff9a3c';
+        ctx.fillText(popup.text, popup.x, popup.y);
+      });
+      ctx.globalAlpha = 1;
+      ctx.textAlign = 'start';
+    }
+
+    // =====================================================================
     // SCORE, LIVES AND HUD
     // =====================================================================
     let score = 0;
@@ -893,6 +1032,62 @@
       playNoise(0.9, 2000, 0.45);
     }
 
+    // Explosive shells leaving the side guns: a rising whoosh
+    function playShellLaunchSound() {
+      playTone('sawtooth', 220, 880, 0.25, 0.06);
+    }
+
+    // Shell detonation: a deep boom
+    function playExplosionSound() {
+      playNoise(0.7, 1500, 0.5);
+      playTone('sawtooth', 180, 40, 0.5, 0.12);
+    }
+
+    // UFO shot down: a jackpot ding over a big explosion
+    function playUfoHitSound() {
+      playNoise(0.5, 3000, 0.35);
+      playTone('square', 1200, 150, 0.6, 0.08);
+      playTone('triangle', 880, 1760, 0.4, 0.15);
+    }
+
+    // UFO siren: a warbling tone that plays for as long as the UFO is on screen
+    let ufoSiren = null;
+
+    function startUfoSiren() {
+      const osc = audioCtx.createOscillator();
+      const wobble = audioCtx.createOscillator(); // Sweeps the pitch up and down
+      const wobbleDepth = audioCtx.createGain();
+      const gain = audioCtx.createGain();
+      osc.type = 'square';
+      osc.frequency.value = 650;
+      wobble.frequency.value = 7;
+      wobbleDepth.gain.value = 150;
+      gain.gain.value = 0.04;
+      wobble.connect(wobbleDepth).connect(osc.frequency);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start();
+      wobble.start();
+      ufoSiren = { osc, wobble };
+    }
+
+    function stopUfoSiren() {
+      if (ufoSiren) {
+        ufoSiren.osc.stop();
+        ufoSiren.wobble.stop();
+        ufoSiren = null;
+      }
+    }
+
+    // Keep the siren in step with the UFO and the mute setting
+    function updateUfoSiren() {
+      const shouldPlay = ufo && soundReady();
+      if (shouldPlay && !ufoSiren) {
+        startUfoSiren();
+      } else if (!shouldPlay && ufoSiren) {
+        stopUfoSiren();
+      }
+    }
+
     // Step the march: the fewer invaders left, the faster the beat
     function updateMarch() {
       marchTimer++;
@@ -922,7 +1117,7 @@
     });
 
     // =====================================================================
-    // PLAYER CONTROLS: arrow keys move the ship, Space fires
+    // PLAYER CONTROLS: arrow keys move the ship, Space fires, Shift fires explosive shells
     // =====================================================================
     // Move the ship left/right and keep it on screen
     function movePlayer() {
@@ -950,6 +1145,136 @@
         });
         playShootSound();
         keys['Space'] = false;
+      }
+    }
+
+    // =====================================================================
+    // EXPLOSIVE SHELLS: Shift fires both side guns; shells blow up on impact
+    // =====================================================================
+    const sideGunColumns = [4, 21]; // Columns of the side-gun barrels in SPRITE_ART.player
+    const sideGunTipRow = 3;        // Row of the red muzzle tips
+    const shellSpeed = 5;
+    const shellReload = 90;         // Frames between volleys (60 frames is about 1 second)
+    const blastRadius = 60;         // Everything this close to the impact is caught in the blast
+    const shells = [];
+    const explosions = [];
+    let shellCooldown = 0;
+
+    // Where a side gun's muzzle is right now
+    function sideGunTip(column) {
+      return {
+        x: player.x + column * SPRITE_PIXEL + SPRITE_PIXEL / 2,
+        y: player.y + sideGunTipRow * SPRITE_PIXEL,
+      };
+    }
+
+    // Fire a pair of shells (one from each side gun) once the guns have reloaded
+    function fireShells() {
+      if (shellCooldown > 0) {
+        shellCooldown--;
+      }
+      if (keys['ShiftLeft'] || keys['ShiftRight']) {
+        if (shellCooldown === 0) {
+          sideGunColumns.forEach(column => {
+            const tip = sideGunTip(column);
+            shells.push({ x: tip.x - 3, y: tip.y - 12, width: 6, height: 12 });
+          });
+          shellCooldown = shellReload;
+          playShellLaunchSound();
+        }
+        keys['ShiftLeft'] = false;
+        keys['ShiftRight'] = false;
+      }
+    }
+
+    // Does this rectangle overlap any invader or the UFO?
+    function shellHitsTarget(shell) {
+      const overlaps = target =>
+        shell.x < target.x + target.width &&
+        shell.x + shell.width > target.x &&
+        shell.y < target.y + target.height &&
+        shell.y + shell.height > target.y;
+      return enemies.some(overlaps) || (ufo && overlaps(ufo));
+    }
+
+    // Fly the shells upwards and detonate any that hit something
+    function moveShells() {
+      for (let i = shells.length - 1; i >= 0; i--) {
+        const shell = shells[i];
+        shell.y -= shellSpeed;
+        if (shell.y + shell.height < 0) {
+          shells.splice(i, 1);
+        } else if (shellHitsTarget(shell) || bulletHitsShield(shell)) {
+          shells.splice(i, 1);
+          explode(shell.x + shell.width / 2, shell.y);
+        }
+      }
+    }
+
+    // Blast everything within blastRadius of (x, y)
+    function explode(x, y) {
+      const inBlast = (targetX, targetY, targetSize) =>
+        Math.hypot(targetX - x, targetY - y) < blastRadius + targetSize / 2;
+
+      // Invaders
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const enemy = enemies[i];
+        if (inBlast(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, enemy.width)) {
+          enemies.splice(i, 1);
+          score += 10;
+        }
+      }
+      updateHud();
+
+      // The UFO
+      if (ufo && inBlast(ufo.x + ufo.width / 2, ufo.y + ufo.height / 2, ufo.width)) {
+        shootDownUfo();
+      }
+
+      // Enemy bullets caught in the blast are destroyed
+      for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        const bullet = enemyBullets[i];
+        if (inBlast(bullet.x, bullet.y, 0)) {
+          enemyBullets.splice(i, 1);
+        }
+      }
+
+      // Shield blocks inside the blast are blown away
+      shields.forEach(shield => {
+        shield.cells.forEach((row, r) => {
+          row.forEach((standing, c) => {
+            const blockX = shield.x + c * PIXEL + PIXEL / 2;
+            const blockY = shield.y + r * PIXEL + PIXEL / 2;
+            if (standing && Math.hypot(blockX - x, blockY - y) < blastRadius * 0.6) {
+              row[c] = false;
+            }
+          });
+        });
+      });
+
+      // Fireball plus a burst of sparks flying outwards
+      const sparks = [];
+      for (let i = 0; i < 18; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 1 + Math.random() * 3;
+        sparks.push({ x: x, y: y, dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed });
+      }
+      explosions.push({ x: x, y: y, life: 30, maxLife: 30, sparks: sparks });
+      playExplosionSound();
+    }
+
+    // Grow and fade each explosion, and move its sparks
+    function moveExplosions() {
+      for (let i = explosions.length - 1; i >= 0; i--) {
+        const explosion = explosions[i];
+        explosion.life--;
+        explosion.sparks.forEach(spark => {
+          spark.x += spark.dx;
+          spark.y += spark.dy;
+        });
+        if (explosion.life <= 0) {
+          explosions.splice(i, 1);
+        }
       }
     }
 
@@ -1107,6 +1432,51 @@
     // =====================================================================
     function drawPlayer() {
       drawSprite(SPRITES.player, player.x, player.y);
+
+      // Side-gun muzzles glow yellow when the explosive shells are ready to fire
+      if (shellCooldown === 0) {
+        ctx.fillStyle = frameCount % 30 < 15 ? '#ffe95c' : '#ffae3c';
+        sideGunColumns.forEach(column => {
+          const tip = sideGunTip(column);
+          ctx.fillRect(tip.x - SPRITE_PIXEL / 2, tip.y, SPRITE_PIXEL, SPRITE_PIXEL);
+        });
+      }
+    }
+
+    // Explosive shells: orange with a yellow core and a flickering exhaust flame
+    function drawShells() {
+      shells.forEach(shell => {
+        drawGlowingBullet(shell, '#ff7a1a', '#ffe95c');
+        ctx.fillStyle = frameCount % 4 < 2 ? '#ff3b1a' : '#ffae3c';
+        ctx.fillRect(shell.x + 1, shell.y + shell.height, shell.width - 2, 3 + Math.random() * 5);
+      });
+    }
+
+    // Explosions: a glowing fireball, an expanding shock ring and flying sparks
+    function drawExplosions() {
+      ctx.globalCompositeOperation = 'lighter';
+      explosions.forEach(explosion => {
+        const fade = explosion.life / explosion.maxLife;
+        const radius = blastRadius * (0.3 + 0.7 * (1 - fade));
+
+        const fireball = ctx.createRadialGradient(explosion.x, explosion.y, 0, explosion.x, explosion.y, radius);
+        fireball.addColorStop(0, `rgba(255, 255, 220, ${fade})`);
+        fireball.addColorStop(0.3, `rgba(255, 200, 60, ${fade * 0.9})`);
+        fireball.addColorStop(0.7, `rgba(255, 90, 20, ${fade * 0.6})`);
+        fireball.addColorStop(1, 'rgba(255, 40, 0, 0)');
+        ctx.fillStyle = fireball;
+        ctx.fillRect(explosion.x - radius, explosion.y - radius, radius * 2, radius * 2);
+
+        ctx.strokeStyle = `rgba(255, 180, 80, ${fade * 0.8})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(explosion.x, explosion.y, radius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = `rgba(255, 220, 120, ${fade})`;
+        explosion.sparks.forEach(spark => ctx.fillRect(spark.x, spark.y, 2, 2));
+      });
+      ctx.globalCompositeOperation = 'source-over';
     }
 
     // Draw a bullet as a coloured glow with a bright core down the middle
@@ -1167,6 +1537,7 @@
     // =====================================================================
     function gameLoop() {
       if (gameOver) {
+        stopUfoSiren();
         return;
       }
 
@@ -1181,19 +1552,27 @@
 
       movePlayer();
       fireBullet();
+      fireShells();
       moveEnemies();
+      moveUfo();
       updateMarch();
       shootBullets();
+      moveShells();
+      moveExplosions();
       enemyFire();
       moveEnemyBullets();
+      checkUfoHit();
       checkCollision();
       checkPlayerHit();
 
       drawShields();
       drawPlayer();
       drawBullets();
+      drawShells();
       drawEnemyBullets();
       drawEnemies();
+      drawUfo();
+      drawExplosions();
 
       requestAnimationFrame(gameLoop);
     }
@@ -1202,7 +1581,7 @@
     gameLoop();
 
     // =====================================================================
-    // RESTART: clicking GAME OVER resets score, lives, bullets and invaders
+    // RESTART: clicking GAME OVER resets score, lives, bullets, invaders and the UFO
     // =====================================================================
     gameOverElement.addEventListener('click', () => {
       gameOver = false;
@@ -1212,8 +1591,12 @@
       player.dx = 0;
       bullets.length = 0;
       enemyBullets.length = 0;
+      shells.length = 0;
+      explosions.length = 0;
+      shellCooldown = 0;
       spawnEnemies();
       spawnShields();
+      resetUfo();
       gameOverElement.style.display = 'none';
       updateHud();
       gameLoop();
